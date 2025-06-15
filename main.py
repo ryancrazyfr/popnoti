@@ -1,9 +1,8 @@
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-from telegram import Update, ChatPermissions
+from telegram import Update
 import os
 import json
 from datetime import datetime
-from io import StringIO
 from oauth2client.service_account import ServiceAccountCredentials
 import gspread
 from google.oauth2 import service_account
@@ -16,6 +15,7 @@ GOOGLE_JSON = os.environ['GOOGLE_JSON']
 SHEET_NAME = "POP Submissions"
 POP_DIR = "pop_submissions"
 DRIVE_FOLDER_ID = "1GvJdGDW7ZZPTyhbxNW-W9P1J94unyGvp"
+ADMIN_USER_ID = 6276794389
 
 # === INIT ===
 if not os.path.exists(POP_DIR):
@@ -46,7 +46,6 @@ def get_or_create_user_folder(username):
     if files:
         return files[0]["id"]
 
-    # Create new folder
     file_metadata = {
         "name": username,
         "mimeType": "application/vnd.google-apps.folder",
@@ -71,6 +70,17 @@ def upload_to_drive(username, filename, filepath):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Welcome! Use /submitpop to send your POP screenshot.")
 
+    pop_links = """🔗 *Do your POP here:*
+
+- [Sexy Baddies](https://t.me/+tGBn9q_6Z-9jMTAx)
+- [Content Hub](https://t.me/+F_BNXoMjPPhmNGEx)
+- [Seductive Sirens](https://t.me/+nvm1zwZz7FA1MTdh)
+- [The Sluts Store](https://t.me/+pkxiRKn2ZvcyMjI8)
+- [My Hot Friends](https://t.me/+A47SCYOy2_MzOTcx)
+- [CumSlut Paradise](https://t.me/+y5TaJPgVGvI1NzQ0)
+"""
+    await update.message.reply_markdown(pop_links)
+
 async def submitpop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Please send your POP screenshot now.")
 
@@ -84,10 +94,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filepath = os.path.join(POP_DIR, filename)
     await file.download_to_drive(filepath)
 
-    # Upload to Google Drive
     drive_link = upload_to_drive(username, filename, filepath)
 
-    # Log to Google Sheet
     sheet.append_row([
         username,
         str(user.id),
@@ -96,6 +104,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         drive_link
     ])
 
+    await context.bot.send_message(chat_id=ADMIN_USER_ID, text=f"✅ @{username} just submitted a POP!")
     await update.message.reply_text("✅ POP received and uploaded to your folder in Drive!")
 
 # === Start bot ===

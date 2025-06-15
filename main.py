@@ -114,37 +114,55 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📤 POP submitted! Waiting for admin approval.")
 
 async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    command = update.message.text
-    user_id = command.replace("/approve_", "")
-    data = context.bot_data.get(f"pending_{user_id}")
-    if not data:
-        await update.message.reply_text("❌ No pending submission found.")
-        return
+    try:
+        command = update.message.text.strip()
+        match = re.match(r"/approve_(\d+)", command)
+        if not match:
+            await update.message.reply_text("❌ Invalid approve command format.")
+            return
 
-    drive_link = upload_to_drive(data["username"], data["filename"], data["filepath"])
-    sheet.append_row([
-        data["username"],
-        str(data["user_id"]),
-        datetime.now().strftime('%Y-%m-%d'),
-        datetime.now().strftime('%H:%M:%S'),
-        drive_link
-    ])
+        user_id = match.group(1)
+        data = context.bot_data.get(f"pending_{user_id}")
 
-    await context.bot.send_message(chat_id=data["user_id"], text="✅ Your POP has been approved and logged.")
-    await update.message.reply_text(f"✅ Approved and uploaded for @{data['username']}.")
-    del context.bot_data[f"pending_{user_id}"]
+        if not data:
+            await update.message.reply_text(f"❌ No pending submission found for user {user_id}.")
+            return
+
+        drive_link = upload_to_drive(data["username"], data["filename"], data["filepath"])
+        sheet.append_row([
+            data["username"],
+            str(data["user_id"]),
+            datetime.now().strftime('%Y-%m-%d'),
+            datetime.now().strftime('%H:%M:%S'),
+            drive_link
+        ])
+
+        await context.bot.send_message(chat_id=data["user_id"], text="✅ Your POP has been approved and logged.")
+        await update.message.reply_text(f"✅ Approved and uploaded for @{data['username']}.")
+        del context.bot_data[f"pending_{user_id}"]
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Error: {str(e)}")
 
 async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    command = update.message.text
-    user_id = command.replace("/reject_", "")
-    data = context.bot_data.get(f"pending_{user_id}")
-    if not data:
-        await update.message.reply_text("❌ No pending submission found.")
-        return
+    try:
+        command = update.message.text.strip()
+        match = re.match(r"/reject_(\d+)", command)
+        if not match:
+            await update.message.reply_text("❌ Invalid reject command format.")
+            return
 
-    await context.bot.send_message(chat_id=data["user_id"], text="❌ Your POP has been rejected by admin.")
-    await update.message.reply_text(f"🚫 Rejected submission from @{data['username']}.")
-    del context.bot_data[f"pending_{user_id}"]
+        user_id = match.group(1)
+        data = context.bot_data.get(f"pending_{user_id}")
+
+        if not data:
+            await update.message.reply_text(f"❌ No pending submission found for user {user_id}.")
+            return
+
+        await context.bot.send_message(chat_id=data["user_id"], text="❌ Your POP has been rejected by admin.")
+        await update.message.reply_text(f"🚫 Rejected submission from @{data['username']}.")
+        del context.bot_data[f"pending_{user_id}"]
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Error: {str(e)}")
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -157,4 +175,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

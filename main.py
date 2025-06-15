@@ -9,7 +9,6 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
-# === CONFIG ===
 BOT_TOKEN = os.environ['BOT_TOKEN']
 GOOGLE_JSON = os.environ['GOOGLE_JSON']
 SHEET_NAME = "POP Submissions"
@@ -17,56 +16,36 @@ POP_DIR = "pop_submissions"
 DRIVE_FOLDER_ID = "1GvJdGDW7ZZPTyhbxNW-W9P1J94unyGvp"
 ADMIN_USER_ID = 6276794389
 
-# === INIT ===
 if not os.path.exists(POP_DIR):
     os.makedirs(POP_DIR)
 
-# === Google APIs setup ===
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
 creds_dict = json.loads(GOOGLE_JSON)
-
-# Google Sheets
 sheets_creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(sheets_creds)
 sheet = client.open(SHEET_NAME).sheet1
-
-# Google Drive
 drive_creds = service_account.Credentials.from_service_account_info(creds_dict)
 drive_service = build("drive", "v3", credentials=drive_creds)
 
-# === Folder Handling ===
 def get_or_create_user_folder(username):
     if not username:
         return DRIVE_FOLDER_ID
-
     query = f"name = '{username}' and mimeType = 'application/vnd.google-apps.folder' and '{DRIVE_FOLDER_ID}' in parents"
     response = drive_service.files().list(q=query, spaces='drive', fields="files(id, name)").execute()
     files = response.get("files", [])
-
     if files:
         return files[0]["id"]
-
-    file_metadata = {
-        "name": username,
-        "mimeType": "application/vnd.google-apps.folder",
-        "parents": [DRIVE_FOLDER_ID]
-    }
+    file_metadata = {"name": username, "mimeType": "application/vnd.google-apps.folder", "parents": [DRIVE_FOLDER_ID]}
     folder = drive_service.files().create(body=file_metadata, fields="id").execute()
     return folder.get("id")
 
-# === File Upload ===
 def upload_to_drive(username, filename, filepath):
     folder_id = get_or_create_user_folder(username or "unknown")
-
-    file_metadata = {
-        "name": filename,
-        "parents": [folder_id]
-    }
+    file_metadata = {"name": filename, "parents": [folder_id]}
     media = MediaFileUpload(filepath, mimetype="image/jpeg")
     uploaded_file = drive_service.files().create(body=file_metadata, media_body=media, fields="id, webViewLink").execute()
     return uploaded_file.get("webViewLink")
 
-# === Bot Commands ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_msg = (
         "👋 Welcome to the POP Bot!\n\n"
@@ -80,7 +59,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_markdown(welcome_msg)
 
-    pop_links = """🔗 *Join These Groups:*
+    pop_links = """🔗 *Do your POP here:*
 
 - [Sexy Baddies](https://t.me/+tGBn9q_6Z-9jMTAx)
 - [Content Hub](https://t.me/+F_BNXoMjPPhmNGEx)
@@ -91,11 +70,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
     await update.message.reply_markdown(pop_links)
 
-
 async def submitpop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.chat_data["expecting_photo"] = True
     await update.message.reply_text("Please send your POP screenshot now.")
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Check if user used /submitpop first
+    if not context.chat_data.get("expecting_photo"):
+        await update.message.reply_text("❗ Please tap /submitpop before sending your screenshot.")
+        return
+    context.chat_data["expecting_photo"] = False
+
     user = update.message.from_user
     username = user.username or f"user_{user.id}"
     photo = update.message.photo[-1]
@@ -105,24 +90,62 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filepath = os.path.join(POP_DIR, filename)
     await file.download_to_drive(filepath)
 
-    drive_link = upload_to_drive(username, filename, filepath)
+    context.bot_data[f"pending_{user.id}"] = {
+        "username": username,
+        "user_id": user.id,
+        "filename": filename,
+        "filepath": filepath,
+        "timestamp": timestamp
+    }
 
+    await context.bot.send_photo(
+        chat_id=ADMIN_USER_ID,
+        photo=open(filepath, "rb"),
+        caption=f"👀 *POP Submission from @{username}*\n\nApprove this screenshot?\nReply with /approve_{user.id} or /reject_{user.id}",
+        parse_mode="Markdown"
+    )
+
+    await update.message.reply_text("📤 POP submitted! Waiting for admin approval.")
+
+async def approve(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    command = update.message.text
+    user_id = command.replace("/approve_", "")
+    data = context.bot_data.get(f"pending_{user_id}")
+    if not data:
+        await update.message.reply_text("❌ No pending submission found.")
+        return
+
+    drive_link = upload_to_drive(data["username"], data["filename"], data["filepath"])
     sheet.append_row([
-        username,
-        str(user.id),
+        data["username"],
+        str(data["user_id"]),
         datetime.now().strftime('%Y-%m-%d'),
         datetime.now().strftime('%H:%M:%S'),
         drive_link
     ])
 
-    await context.bot.send_message(chat_id=ADMIN_USER_ID, text=f"✅ @{username} just submitted a POP!")
-    await update.message.reply_text("✅ POP received and uploaded to your folder in Drive!")
+    await context.bot.send_message(chat_id=data["user_id"], text="✅ Your POP has been approved and logged.")
+    await update.message.reply_text(f"✅ Approved and uploaded for @{data['username']}.")
+    del context.bot_data[f"pending_{user_id}"]
 
-# === Start bot ===
+async def reject(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    command = update.message.text
+    user_id = command.replace("/reject_", "")
+    data = context.bot_data.get(f"pending_{user_id}")
+    if not data:
+        await update.message.reply_text("❌ No pending submission found.")
+        return
+
+    await context.bot.send_message(chat_id=data["user_id"], text="❌ Your POP has been rejected by admin.")
+    await update.message.reply_text(f"🚫 Rejected submission from @{data['username']}.")
+    del context.bot_data[f"pending_{user_id}"]
+
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("submitpop", submitpop))
+    app.add_handler(CommandHandler("approve_", approve))
+    app.add_handler(CommandHandler("reject_", reject))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     app.run_polling()
 

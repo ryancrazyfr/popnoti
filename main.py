@@ -68,9 +68,19 @@ def upload_to_drive(username, filename, filepath):
 
 # === Bot Commands ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Welcome! Use /submitpop to send your POP screenshot.")
+    welcome_msg = (
+        "👋 Welcome to the POP Bot!\n\n"
+        "📌 *What is POP?*\n"
+        "POP (Proof of Promo) is a screenshot you take after promoting our group links "
+        "on your own channel or another platform. It helps keep our traffic strong!\n\n"
+        "🛠 To submit your weekly POP:\n"
+        "1. Tap /submitpop\n"
+        "2. Upload your screenshot\n\n"
+        "📎 Below are the group links you need to promote 👇"
+    )
+    await update.message.reply_markdown(welcome_msg)
 
-    pop_links = """🔗 *Do your POP here:*
+    pop_links = """🔗 *Join These Groups:*
 
 - [Sexy Baddies](https://t.me/+tGBn9q_6Z-9jMTAx)
 - [Content Hub](https://t.me/+F_BNXoMjPPhmNGEx)
@@ -80,6 +90,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 - [CumSlut Paradise](https://t.me/+y5TaJPgVGvI1NzQ0)
 """
     await update.message.reply_markdown(pop_links)
+
 
 async def submitpop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Please send your POP screenshot now.")
